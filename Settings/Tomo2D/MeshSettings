@@ -1,0 +1,13 @@
+MESH TYPE: LAND
+NX NY: 7601 121
+UNIFORM GRID: YES
+DX DY(km): 0.0125 0.0125
+GRID FILE: ./Settings/Tomo2D/grid.dat
+TOPOGRAPHY FILE: ./Settings/Tomo2D/topo.dat
+XSTART YSTART: 0 0
+MODEL TYPE: file
+VELOCITY FILETYPE: ascii
+VELOCITY FILE: ./Settings/Tomo2D/init.dat
+V_START DV(km/s): 2.5 0.04
+INTERFACE FILE: ./Settings/Tomo2D/Interface.dat
+
