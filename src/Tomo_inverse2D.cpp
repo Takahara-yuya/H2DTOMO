@@ -19,7 +19,7 @@ zcjadc@126.com
 School of Ocean and Earth Science, Tongji University
 Integrated Geophysics Group
 
-version 2.6.0
+version 3.0.0
 
 
 ***********************************************************************
@@ -137,8 +137,8 @@ void Tomoinv2D::ASTinv(TomoMesh2D& model, TomoMesh2D mapr, TomoSrs2D data_obs, T
 		}
 		else
 		{
-			movingAverage2D(fwd.grad_refl, nx, ny, smx, smy, smtimes);
-			movingAverage2D(fwd.grad_refr, nx, ny, smx, smy, smtimes);
+			movingAverage2D_topo(fwd.grad_refl, nx, ny, smx, smy, smtimes, model.topo_ynum);
+			movingAverage2D_topo(fwd.grad_refr, nx, ny, smx, smy, smtimes, model.topo_ynum);
 		}
 		//add constraint
 		frmax = -99999.; flmax = -99999.;
