@@ -19,7 +19,7 @@ zcjadc@126.com
 School of Ocean and Earth Science, Tongji University
 Integrated Geophysics Group
 
-version 2.6.0
+version 2.0.0
 
 
 ***********************************************************************
@@ -116,7 +116,7 @@ void TomoMesh2D::Init_model(string filename)
 	}
 	else
 	{
-		_Read_Topofile(topofile, model_type);
+		//_Read_Topofile(topofile, model_type);
 		_Read_Velocityfile(velocityfile, filetype);
 	}
 	//make slowness
@@ -186,10 +186,21 @@ void TomoMesh2D::_Read_Velocityfile(string filename, string binary)
 	{
 		read_2d_bin(filename, Vel, Num_xCen, Num_yCen);
 		for (int ix = 0; ix < Num_xCen; ix++)
+		{
+
 			for (int iy = 0; iy < Num_yCen; iy++)
 			{
 				Vel[ix][iy] *= 1000.;
 			}
+			topo_ynum[ix] = 0;
+			for (int iy = 0; iy < Num_yCen; iy++)
+			{
+				if (iy > 0 && Vel[ix][iy - 1] < 1100 && Vel[ix][iy] > 1100) {
+					topo_ynum[ix] = iy;
+					break;
+				}
+			}
+		}
 	}
 	else
 	{
@@ -200,11 +211,31 @@ void TomoMesh2D::_Read_Velocityfile(string filename, string binary)
 			exit(1);
 		}
 		for (int ix = 0; ix < Num_xCen; ix++)
+		{
 			for (int iy = 0; iy < Num_yCen; iy++)
 			{
 				fin >> tmp1 >> tmp2 >> Vel[ix][iy];
 			}
+			topo_ynum[ix] = 0;
+			for (int iy = 0; iy < Num_yCen; iy++)
+			{
+				if (iy > 0 && Vel[ix][iy - 1] < 350 && Vel[ix][iy] > 350) {
+					topo_ynum[ix] = iy;
+					xTopo[ix] = yNode[iy];
+					break;
+				}
+			}
+		}
 		fin.close();
+	}
+	yMax = -999999.; xMax = -999999.;
+	for (int iy = 0; iy < Num_yCen; iy++)
+	{
+		if (yMax < yCen[iy])yMax = yCen[iy];
+	}
+	for (int ix = 0; ix < Num_xCen; ix++)
+	{
+		if (xMax < xCen[ix])xMax = xCen[ix];
 	}
 }
 

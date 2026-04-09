@@ -19,8 +19,8 @@ zcjadc@126.com
 School of Ocean and Earth Science, Tongji University
 Integrated Geophysics Group
 
-version 2.6.0
-
+version 3.0.0
+April 02, 2026
 
 ***********************************************************************
 */
@@ -84,24 +84,24 @@ void Tomofsm2D::output(TomoSrs2D data_cal)
 		cerr << "Error writing travel time file" << endl;
 		exit(1);
 	}
-	fout << data_cal.Num_source << endl;
+	fout << data_cal.Num_source << '\n';
 	for (int is = 0; is < data_cal.Num_source; is++)
 	{
 		fout << "s" << " " << data_cal.soux[is] / 1000. << " " << data_cal.souy[is] / 1000. << " "
-			<< (data_cal.data[is].nrec_reflec + data_cal.data[is].nrec_refrac) << endl;
+			<< (data_cal.data[is].nrec_reflec + data_cal.data[is].nrec_refrac) << '\n';
 		for (int ifrac = 0; ifrac < data_cal.data[is].nrec_refrac; ifrac++)
 		{
 			fout << "r" << " " << data_cal.data[is].recx_refrac[ifrac] / 1000. << " " << data_cal.data[is].recy_refrac[ifrac] / 1000. << " "
-				<< "0" << " " << data_cal.data[is].time_refrac[ifrac] << " " << data_cal.data[is].err_refrac[ifrac] << endl;
+				<< "0" << " " << data_cal.data[is].time_refrac[ifrac] << " " << data_cal.data[is].err_refrac[ifrac] << '\n';
 			fout1 << data_cal.data[is].recx_refrac[ifrac] / 1000. << " " << data_cal.data[is].recy_refrac[ifrac] / 1000. << " "
-				<< data_cal.data[is].time_refrac[ifrac] << endl;
+				<< data_cal.data[is].time_refrac[ifrac] << '\n';
 		}
 		for (int iflec = 0; iflec < data_cal.data[is].nrec_reflec; iflec++)
 		{
 			fout << "r" << " " << data_cal.data[is].recx_reflec[iflec] / 1000. << " " << data_cal.data[is].recy_reflec[iflec] / 1000. << " "
-				<< "1" << " " << data_cal.data[is].time_reflec[iflec] << " " << data_cal.data[is].err_reflec[iflec] << endl;
+				<< "1" << " " << data_cal.data[is].time_reflec[iflec] << " " << data_cal.data[is].err_reflec[iflec] << '\n';
 			fout2 << data_cal.data[is].recx_reflec[iflec] / 1000. << " " << data_cal.data[is].recy_reflec[iflec] / 1000. << " "
-				<< data_cal.data[is].time_reflec[iflec] << endl;
+				<< data_cal.data[is].time_reflec[iflec] << '\n';
 		}
 	}
 	fout.close();
@@ -111,246 +111,328 @@ void Tomofsm2D::output(TomoSrs2D data_cal)
 
 void Tomofsm2D::Fsm_fwd(TomoMesh2D model, TomoSrs2D data_obs, TomoSrs2D& data_cal, bool inv)
 {
-	for (int ishot = 0; ishot < data_cal.Num_source; ishot++)
-	{
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_refrac; irec++)data_cal.data[ishot].time_refrac[irec] = 0;
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_reflec; irec++)data_cal.data[ishot].time_reflec[irec] = 0;
+	// 初始化计算走时（清零）
+	for (int ishot = 0; ishot < data_cal.Num_source; ishot++) {
+		for (int irec = 0; irec < data_cal.data[ishot].nrec_refrac; irec++)
+			data_cal.data[ishot].time_refrac[irec] = 0;
+		for (int irec = 0; irec < data_cal.data[ishot].nrec_reflec; irec++)
+			data_cal.data[ishot].time_reflec[irec] = 0;
 	}
+
 	auto start_time = std::chrono::high_resolution_clock::now();
-	//
-	//ishot
-	int nx, ny;
-	nx = model.Num_xCen;
-	ny = model.Num_yCen;
-	if (inv)
-	{
+
+	int nx = model.Num_xCen;
+	int ny = model.Num_yCen;
+
+	// 若需要反演，分配全局梯度和密度（局部累加，跨炮点）
+	if (inv) {
 		zero_2d(grad_refl, nx, ny);
 		zero_2d(grad_refr, nx, ny);
 	}
-	int nx_s, nx_e;
-	double** grad_refl_tmp, ** grad_refr_tmp, ** dens_refr, ** dens_refl, ** dens_refr_tmp, ** dens_refl_tmp;
-	double** T_refrac, ** T_reflec, * tt_interface;
-	grad_refl_tmp = alloc_double_2d(nx, ny);
-	grad_refr_tmp = alloc_double_2d(nx, ny);
-	dens_refr_tmp = alloc_double_2d(nx, ny);
-	dens_refl_tmp = alloc_double_2d(nx, ny);
-	dens_refr = alloc_double_2d(nx, ny);
-	dens_refl = alloc_double_2d(nx, ny);
-	T_refrac = alloc_double_2d(nx, ny);
-	T_reflec = alloc_double_2d(nx, ny);
-	tt_interface = alloc_double_1d(nx);
-	zero_2d(dens_refr, nx, ny);
-	zero_2d(dens_refl, nx, ny);
-	zero_2d(T_refrac, nx, ny);
-	zero_2d(T_reflec, nx, ny);
-	if (myid == 0)
-	{
+	// 注意：dens_refr 和 dens_refl 将在后面局部分配，这里不声明为成员
+
+	// 工作数组（每炮临时使用）
+	double** grad_refl_tmp = alloc_double_2d(nx, ny);
+	double** grad_refr_tmp = alloc_double_2d(nx, ny);
+	double** dens_refr_tmp = alloc_double_2d(nx, ny);
+	double** dens_refl_tmp = alloc_double_2d(nx, ny);
+	double** T_refrac = alloc_double_2d(nx, ny);
+	double** T_reflec = alloc_double_2d(nx, ny);
+	double* tt_interface = alloc_double_1d(nx);
+
+	// 密度数组（局部，跨炮点累加）
+	double** dens_refr = nullptr;
+	double** dens_refl = nullptr;
+	if (inv && precondition) {
+		dens_refr = alloc_double_2d(nx, ny);
+		dens_refl = alloc_double_2d(nx, ny);
+		zero_2d(dens_refr, nx, ny);
+		zero_2d(dens_refl, nx, ny);
+	}
+
+	if (myid == 0) {
 		cerr << "Fast sweeping forward modeling start!" << endl;
 		cerr << "Shot number:" << endl;
 	}
 	MPI_Barrier(MPI_COMM_WORLD);
-	for (int ishot = myid; ishot < data_cal.Num_source; ishot += np)
-	{
+
+	// ======================= 并行炮循环 =======================
+	for (int ishot = myid; ishot < data_cal.Num_source; ishot += np) {
 		cerr << ishot + 1 << " ";
-		///block
-		nx_s = 999999999;
-		nx_e = -999999999;
-		for (int i = 0; i < data_obs.data[ishot].nrec_refrac; i++)
-		{
-			if (nx_s > data_obs.data[ishot].rec_refr_index[0][i])nx_s = data_obs.data[ishot].rec_refr_index[0][i];
-			if (nx_e < data_obs.data[ishot].rec_refr_index[0][i])nx_e = data_obs.data[ishot].rec_refr_index[0][i];
+
+		// 确定当前炮的 x 范围（用于加速）
+		int nx_s = 999999999, nx_e = -999999999;
+		for (int i = 0; i < data_obs.data[ishot].nrec_refrac; i++) {
+			nx_s = min(nx_s, data_obs.data[ishot].rec_refr_index[0][i]);
+			nx_e = max(nx_e, data_obs.data[ishot].rec_refr_index[0][i]);
 		}
-		for (int i = 0; i < data_obs.data[ishot].nrec_reflec; i++)
-		{
-			if (nx_s > data_obs.data[ishot].rec_refl_index[0][i])nx_s = data_obs.data[ishot].rec_refl_index[0][i];
-			if (nx_e < data_obs.data[ishot].rec_refl_index[0][i])nx_e = data_obs.data[ishot].rec_refl_index[0][i];
+		for (int i = 0; i < data_obs.data[ishot].nrec_reflec; i++) {
+			nx_s = min(nx_s, data_obs.data[ishot].rec_refl_index[0][i]);
+			nx_e = max(nx_e, data_obs.data[ishot].rec_refl_index[0][i]);
 		}
-		if (nx_s > data_obs.sou_index[0][ishot])nx_s = data_obs.sou_index[0][ishot];
-		if (nx_e < data_obs.sou_index[0][ishot])nx_e = data_obs.sou_index[0][ishot];
-		nx_s -= 10;
-		if (nx_s < 0)nx_s = 0;
-		nx_e += 10;
-		if (nx_e > nx)nx_e = nx;
-		/////
-		if (data_cal.data[ishot].nrec_refrac > 0)
-		{
-			_Fsm_fwd_1shot_ttfield(nx, ny, data_obs.data[ishot].nrec_refrac, data_obs.data[ishot].nrec_reflec, nx_s, nx_e,
-				data_obs.soux[ishot], data_obs.souy[ishot], data_obs.sou_index, data_obs.sou_type, model.intf_ynum, T_refrac, tt_interface,
-				model.dX, model.dY, model.Slowness, model.xCen, model.yCen, data_obs.data[ishot].rec_refr_index, data_obs.data[ishot].rec_refl_index,
+		nx_s = min(nx_s, data_obs.sou_index[0][ishot]);
+		nx_e = max(nx_e, data_obs.sou_index[0][ishot]);
+		nx_s = max(0, nx_s - 10);
+		nx_e = min(nx, nx_e + 10);
+
+		// 计算折射波场
+		if (data_cal.data[ishot].nrec_refrac > 0) {
+			_Fsm_fwd_1shot_ttfield(nx, ny,
+				data_obs.data[ishot].nrec_refrac,
+				data_obs.data[ishot].nrec_reflec,
+				nx_s, nx_e,
+				data_obs.soux[ishot], data_obs.souy[ishot],
+				data_obs.sou_index, data_obs.sou_type,
+				model.intf_ynum, T_refrac, tt_interface,
+				model.dX, model.dY, model.Slowness,
+				model.xCen, model.yCen,
+				data_obs.data[ishot].rec_refr_index,
+				data_obs.data[ishot].rec_refl_index,
 				0, ishot);
 		}
-		if (data_cal.data[ishot].nrec_reflec > 0)
-		{
-			if (data_cal.data[ishot].nrec_refrac == 0)
-			{
-				_Fsm_fwd_1shot_ttfield(nx, ny, data_obs.data[ishot].nrec_refrac, data_obs.data[ishot].nrec_reflec, nx_s, nx_e,
-					data_obs.soux[ishot], data_obs.souy[ishot], data_obs.sou_index, data_obs.sou_type, model.intf_ynum, T_refrac, tt_interface,
-					model.dX, model.dY, model.Slowness, model.xCen, model.yCen, data_obs.data[ishot].rec_refr_index, data_obs.data[ishot].rec_refl_index,
+
+		if (data_cal.data[ishot].nrec_reflec > 0) {
+			if (data_cal.data[ishot].nrec_refrac == 0) {
+				_Fsm_fwd_1shot_ttfield(nx, ny,
+					data_obs.data[ishot].nrec_refrac,
+					data_obs.data[ishot].nrec_reflec,
+					nx_s, nx_e,
+					data_obs.soux[ishot], data_obs.souy[ishot],
+					data_obs.sou_index, data_obs.sou_type,
+					model.intf_ynum, T_refrac, tt_interface,
+					model.dX, model.dY, model.Slowness,
+					model.xCen, model.yCen,
+					data_obs.data[ishot].rec_refr_index,
+					data_obs.data[ishot].rec_refl_index,
 					0, ishot);
 			}
+			// 提取界面上的走时作为反射源
 			for (int ix = 0; ix < nx; ix++)
 				tt_interface[ix] = T_refrac[ix][model.intf_ynum[ix] - 1];
-			_Fsm_fwd_1shot_ttfield(nx, ny, data_obs.data[ishot].nrec_refrac, data_obs.data[ishot].nrec_reflec, nx_s, nx_e,
-				data_obs.soux[ishot], data_obs.souy[ishot], data_obs.sou_index, data_obs.sou_type, model.intf_ynum, T_reflec, tt_interface,
-				model.dX, model.dY, model.Slowness, model.xCen, model.yCen, data_obs.data[ishot].rec_refr_index, data_obs.data[ishot].rec_refl_index,
+			_Fsm_fwd_1shot_ttfield(nx, ny,
+				data_obs.data[ishot].nrec_refrac,
+				data_obs.data[ishot].nrec_reflec,
+				nx_s, nx_e,
+				data_obs.soux[ishot], data_obs.souy[ishot],
+				data_obs.sou_index, data_obs.sou_type,
+				model.intf_ynum, T_reflec, tt_interface,
+				model.dX, model.dY, model.Slowness,
+				model.xCen, model.yCen,
+				data_obs.data[ishot].rec_refr_index,
+				data_obs.data[ishot].rec_refl_index,
 				1, ishot);
 		}
-		//get Traveltime for nrec
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_refrac; irec++)
-		{
-			data_cal.data[ishot].time_refrac[irec] = _cal_rec_tt(T_refrac, ishot, irec, data_cal.data[ishot].rec_refr_index[0][irec], data_cal.data[ishot].rec_refr_index[1][irec],
-				data_cal.data[ishot].recx_refrac[irec], data_cal.data[ishot].recy_refrac[irec], data_cal.data[ishot].rec_refr_type[irec], model.xCen, model.yCen);
+
+		// 计算每个接收点的理论走时
+		for (int irec = 0; irec < data_cal.data[ishot].nrec_refrac; irec++) {
+			data_cal.data[ishot].time_refrac[irec] = _cal_rec_tt(
+				T_refrac, ishot, irec,
+				data_cal.data[ishot].rec_refr_index[0][irec],
+				data_cal.data[ishot].rec_refr_index[1][irec],
+				data_cal.data[ishot].recx_refrac[irec],
+				data_cal.data[ishot].recy_refrac[irec],
+				data_cal.data[ishot].rec_refr_type[irec],
+				model.xCen, model.yCen);
 		}
-		//
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_reflec; irec++)
-		{
-			data_cal.data[ishot].time_reflec[irec] = _cal_rec_tt(T_reflec, ishot, irec, data_cal.data[ishot].rec_refl_index[0][irec], data_cal.data[ishot].rec_refl_index[1][irec],
-				data_cal.data[ishot].recx_reflec[irec], data_cal.data[ishot].recy_reflec[irec], data_cal.data[ishot].rec_refl_type[irec], model.xCen, model.yCen);
+		for (int irec = 0; irec < data_cal.data[ishot].nrec_reflec; irec++) {
+			data_cal.data[ishot].time_reflec[irec] = _cal_rec_tt(
+				T_reflec, ishot, irec,
+				data_cal.data[ishot].rec_refl_index[0][irec],
+				data_cal.data[ishot].rec_refl_index[1][irec],
+				data_cal.data[ishot].recx_reflec[irec],
+				data_cal.data[ishot].recy_reflec[irec],
+				data_cal.data[ishot].rec_refl_type[irec],
+				model.xCen, model.yCen);
 		}
-		if (T_refrac_print)_ttfield_print(T_refrac, int(ishot + 1), 0, model);
-		if (T_reflec_print)_ttfield_print(T_reflec, int(ishot + 1), 1, model);
-		//inverse!!
-		if (inv)
-		{
+
+
+		if (T_refrac_print) _ttfield_print(T_refrac, ishot + 1, 0, model);
+		if (T_reflec_print) _ttfield_print(T_reflec, ishot + 1, 1, model);
+
+		if (inv) {
 			zero_2d(grad_refl_tmp, nx, ny);
 			zero_2d(grad_refr_tmp, nx, ny);
 			zero_2d(dens_refr_tmp, nx, ny);
 			zero_2d(dens_refl_tmp, nx, ny);
-			if (data_cal.data[ishot].nrec_refrac > 0)
-			{
-				_get_grad_1shot(data_cal.data[ishot].nrec_refrac, nx, ny, nx_s, nx_e, data_obs.data[ishot].err_refrac
-					, data_obs.data[ishot].time_refrac, data_cal.data[ishot].time_refrac, data_obs.data[ishot].rec_refr_type, data_obs.data[ishot].rec_refr_index
-					, data_obs.data[ishot].recx_refrac, data_obs.data[ishot].recy_refrac, model.xCen, model.yCen, model.intf_ynum, model.dX, model.dY, model.xTopo
-					, model.Slowness, ishot, T_refrac, T_reflec, grad_refr_tmp, dens_refr_tmp, 0);
+
+			if (data_cal.data[ishot].nrec_refrac > 0) {
+				_get_grad_1shot(data_cal.data[ishot].nrec_refrac,
+					nx, ny, nx_s, nx_e,
+					data_obs.data[ishot].err_refrac,
+					data_obs.data[ishot].time_refrac,
+					data_cal.data[ishot].time_refrac,
+					data_obs.data[ishot].rec_refr_type,
+					data_obs.data[ishot].rec_refr_index,
+					data_obs.data[ishot].recx_refrac,
+					data_obs.data[ishot].recy_refrac,
+					model.xCen, model.yCen,
+					model.intf_ynum, model.dX, model.dY,
+					model.xTopo, model.Slowness,
+					ishot, T_refrac, T_reflec,
+					grad_refr_tmp, dens_refr_tmp, 0);
 			}
-			if (data_cal.data[ishot].nrec_reflec > 0)
-			{
-				_get_grad_1shot(data_cal.data[ishot].nrec_reflec, nx, ny, nx_s, nx_e, data_obs.data[ishot].err_reflec
-					, data_obs.data[ishot].time_reflec, data_cal.data[ishot].time_reflec, data_obs.data[ishot].rec_refl_type, data_obs.data[ishot].rec_refl_index
-					, data_obs.data[ishot].recx_reflec, data_obs.data[ishot].recy_reflec, model.xCen, model.yCen, model.intf_ynum, model.dX, model.dY, model.xTopo
-					, model.Slowness, ishot, T_reflec, T_refrac, grad_refl_tmp, dens_refl_tmp, 1);
+			if (data_cal.data[ishot].nrec_reflec > 0) {
+				_get_grad_1shot(data_cal.data[ishot].nrec_reflec,
+					nx, ny, nx_s, nx_e,
+					data_obs.data[ishot].err_reflec,
+					data_obs.data[ishot].time_reflec,
+					data_cal.data[ishot].time_reflec,
+					data_obs.data[ishot].rec_refl_type,
+					data_obs.data[ishot].rec_refl_index,
+					data_obs.data[ishot].recx_reflec,
+					data_obs.data[ishot].recy_reflec,
+					model.xCen, model.yCen,
+					model.intf_ynum, model.dX, model.dY,
+					model.xTopo, model.Slowness,
+					ishot, T_reflec, T_refrac,
+					grad_refl_tmp, dens_refl_tmp, 1);
 			}
-			for (int ix = 0; ix < nx; ix++)
-				for (int iy = 0; iy < ny; iy++)
-				{
-					if (data_cal.data[ishot].nrec_refrac > 0)grad_refr[ix][iy] -= grad_refr_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
-					if (data_cal.data[ishot].nrec_reflec > 0)grad_refl[ix][iy] -= grad_refl_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
-					if (precondition)
-					{
-						if (data_cal.data[ishot].nrec_refrac > 0)dens_refr[ix][iy] += dens_refr_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
-						if (data_cal.data[ishot].nrec_reflec > 0)dens_refl[ix][iy] += dens_refl_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
+
+			for (int ix = 0; ix < nx; ix++) {
+				for (int iy = 0; iy < ny; iy++) {
+					if (data_cal.data[ishot].nrec_refrac > 0) {
+						grad_refr[ix][iy] -= grad_refr_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
+						if (precondition && dens_refr)
+							dens_refr[ix][iy] += dens_refr_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
+					}
+					if (data_cal.data[ishot].nrec_reflec > 0) {
+						grad_refl[ix][iy] -= grad_refl_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
+						if (precondition && dens_refl)
+							dens_refl[ix][iy] += dens_refl_tmp[ix][iy] / pow(model.Vel[ix][iy], 3);
 					}
 				}
-		}
+			}
+		} // end if inv
+	} // end for ishot
+
+	int total_refr = 0, total_refl = 0;
+	for (int is = 0; is < data_cal.Num_source; is++) {
+		total_refr += data_cal.data[is].nrec_refrac;
+		total_refl += data_cal.data[is].nrec_reflec;
 	}
-	if (inv)
-	{
-		if (precondition)
-		{
+	int total_points = total_refr + total_refl;
+	std::vector<double> send_buf(total_points, 0.0);
+	std::vector<double> recv_buf(total_points, 0.0);
+
+	int idx = 0;
+	for (int is = 0; is < data_cal.Num_source; is++) {
+		for (int ir = 0; ir < data_cal.data[is].nrec_refrac; ir++)
+			send_buf[idx++] = data_cal.data[is].time_refrac[ir];
+		for (int ir = 0; ir < data_cal.data[is].nrec_reflec; ir++)
+			send_buf[idx++] = data_cal.data[is].time_reflec[ir];
+	}
+	MPI_Reduce(send_buf.data(), recv_buf.data(), total_points, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Bcast(recv_buf.data(), total_points, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	idx = 0;
+	for (int is = 0; is < data_cal.Num_source; is++) {
+		for (int ir = 0; ir < data_cal.data[is].nrec_refrac; ir++)
+			data_cal.data[is].time_refrac[ir] = recv_buf[idx++];
+		for (int ir = 0; ir < data_cal.data[is].nrec_reflec; ir++)
+			data_cal.data[is].time_reflec[ir] = recv_buf[idx++];
+	}
+	send_buf.clear(); send_buf.shrink_to_fit();
+	recv_buf.clear(); recv_buf.shrink_to_fit();
+
+	if (inv) {
+		int nxy = nx * ny;
+		std::vector<double> flat_send(nxy), flat_recv(nxy);
+
+		// 合并 grad_refr
+		for (int ix = 0; ix < nx; ix++)
+			for (int iy = 0; iy < ny; iy++)
+				flat_send[ix * ny + iy] = grad_refr[ix][iy];
+		MPI_Reduce(flat_send.data(), flat_recv.data(), nxy, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+		MPI_Bcast(flat_recv.data(), nxy, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+		for (int ix = 0; ix < nx; ix++)
+			for (int iy = 0; iy < ny; iy++)
+				grad_refr[ix][iy] = flat_recv[ix * ny + iy];
+
+		// 合并 grad_refl
+		for (int ix = 0; ix < nx; ix++)
+			for (int iy = 0; iy < ny; iy++)
+				flat_send[ix * ny + iy] = grad_refl[ix][iy];
+		MPI_Reduce(flat_send.data(), flat_recv.data(), nxy, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+		MPI_Bcast(flat_recv.data(), nxy, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+		for (int ix = 0; ix < nx; ix++)
+			for (int iy = 0; iy < ny; iy++)
+				grad_refl[ix][iy] = flat_recv[ix * ny + iy];
+
+		if (precondition && dens_refr && dens_refl) {
+			// 合并 dens_refr
 			for (int ix = 0; ix < nx; ix++)
 				for (int iy = 0; iy < ny; iy++)
-				{
-					if (iy < model.topo_ynum[ix] + 1 || ix == nx - 1)
-					{
-						dens_refr[ix][iy] = 0;
-						dens_refl[ix][iy] = 0;
+					flat_send[ix * ny + iy] = dens_refr[ix][iy];
+			MPI_Reduce(flat_send.data(), flat_recv.data(), nxy, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+			MPI_Bcast(flat_recv.data(), nxy, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+			for (int ix = 0; ix < nx; ix++)
+				for (int iy = 0; iy < ny; iy++)
+					dens_refr[ix][iy] = flat_recv[ix * ny + iy];
+
+			// 合并 dens_refl
+			for (int ix = 0; ix < nx; ix++)
+				for (int iy = 0; iy < ny; iy++)
+					flat_send[ix * ny + iy] = dens_refl[ix][iy];
+			MPI_Reduce(flat_send.data(), flat_recv.data(), nxy, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+			MPI_Bcast(flat_recv.data(), nxy, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+			for (int ix = 0; ix < nx; ix++)
+				for (int iy = 0; iy < ny; iy++)
+					dens_refl[ix][iy] = flat_recv[ix * ny + iy];
+		}
+	} // end if inv
+
+	if (inv) {
+		if (precondition && dens_refr && dens_refl) {
+			for (int ix = 0; ix < nx; ix++) {
+				for (int iy = 0; iy < ny; iy++) {
+					if (iy < model.topo_ynum[ix] + 1 || ix == nx - 1) {
+						dens_refr[ix][iy] = 0.0;
+						dens_refl[ix][iy] = 0.0;
 					}
-					if (iy > model.intf_ynum[ix] - 1)
-					{
-						dens_refl[ix][iy] = 0;
+					if (iy > model.intf_ynum[ix] - 1) {
+						dens_refl[ix][iy] = 0.0;
 					}
 				}
+			}
 			normolization(dens_refr, nx, ny);
 			normolization(dens_refl, nx, ny);
 		}
-		for (int ix = 0; ix < nx; ix++)
-			for (int iy = 0; iy < ny; iy++)
-			{
-				if (iy < model.topo_ynum[ix] + 1 || ix == nx - 1)
-				{
-					grad_refr[ix][iy] = 0;
-					grad_refl[ix][iy] = 0;
+
+		for (int ix = 0; ix < nx; ix++) {
+			for (int iy = 0; iy < ny; iy++) {
+				if (iy < model.topo_ynum[ix] + 1 || ix == nx - 1) {
+					grad_refr[ix][iy] = 0.0;
+					grad_refl[ix][iy] = 0.0;
 				}
-				if (iy > model.intf_ynum[ix] - 1)
-				{
-					grad_refl[ix][iy] = 0;
+				if (iy > model.intf_ynum[ix] - 1) {
+					grad_refl[ix][iy] = 0.0;
 				}
-				if (precondition)
-				{
+				if (precondition && dens_refr && dens_refl) {
 					grad_refr[ix][iy] /= (dens_refr[ix][iy] + damp);
 					grad_refl[ix][iy] /= (dens_refl[ix][iy] + damp);
 				}
 			}
+		}
 	}
+
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
 	MPI_Barrier(MPI_COMM_WORLD);
-	if (myid == 0)
-	{
+	if (myid == 0) {
 		cerr << endl;
 		cerr << "Forward modeling time: " << duration.count() << " s" << endl;
 	}
+
 	free_2d(grad_refl_tmp, nx);
 	free_2d(grad_refr_tmp, nx);
 	free_2d(dens_refr_tmp, nx);
 	free_2d(dens_refl_tmp, nx);
-	free_2d(dens_refl, nx);
-	free_2d(dens_refr, nx);
 	free_2d(T_refrac, nx);
 	free_2d(T_reflec, nx);
 	free_1d(tt_interface);
-	///
-	///Ruduce_and_Bcast
-	for (int ishot = 0; ishot < data_cal.Num_source; ishot++)
-	{
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_refrac; irec++)
-		{
-			void* temp_ptr = malloc(sizeof(double));
-			double* new_sendbuf = (double*)temp_ptr;
-			memcpy(new_sendbuf, &data_cal.data[ishot].time_refrac[irec], sizeof(double));
-			MPI_Reduce(new_sendbuf, &data_cal.data[ishot].time_refrac[irec],
-				1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-			free(new_sendbuf);
-		}
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_reflec; irec++)
-		{
-			void* temp_ptr = malloc(sizeof(double));
-			double* new_sendbuf = (double*)temp_ptr;
-			memcpy(new_sendbuf, &data_cal.data[ishot].time_reflec[irec], sizeof(double));
-			MPI_Reduce(new_sendbuf, &data_cal.data[ishot].time_reflec[irec],
-				1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-			free(new_sendbuf);
-		}
+	if (inv && precondition) {
+		if (dens_refr) free_2d(dens_refr, nx);
+		if (dens_refl) free_2d(dens_refl, nx);
 	}
-	for (int ishot = 0; ishot < data_cal.Num_source; ishot++)
-	{
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_refrac; irec++)
-			MPI_Bcast(&data_cal.data[ishot].time_refrac[irec], 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		for (int irec = 0; irec < data_cal.data[ishot].nrec_reflec; irec++)
-			MPI_Bcast(&data_cal.data[ishot].time_reflec[irec], 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	}
-	if (inv)
-	{
-		for (int ix = 0; ix < nx; ix++)
-		{
-			void* temp_ptr = malloc(sizeof(double) * ny);
-			void* temp_ptr2 = malloc(sizeof(double) * ny);
-			double* new_sendbuf = (double*)temp_ptr;
-			double* new_sendbuf2 = (double*)temp_ptr2;
-			memcpy(new_sendbuf, grad_refr[ix], sizeof(double) * ny);
-			memcpy(new_sendbuf2, grad_refl[ix], sizeof(double) * ny);
-			MPI_Reduce(new_sendbuf, grad_refr[ix], ny, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-			MPI_Reduce(new_sendbuf2, grad_refl[ix], ny, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-			free(new_sendbuf);
-			free(new_sendbuf2);
-		}
-		for (int ix = 0; ix < nx; ix++)
-		{
-			MPI_Bcast(grad_refr[ix], ny, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-			MPI_Bcast(grad_refl[ix], ny, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		}
-	}
-	MPI_Barrier(MPI_COMM_WORLD);
 }
 
 void Tomofsm2D::_Fsm_fwd_1shot_ttfield(int nx, int ny, int nrecfr, int nrecfl, int nx_s, int nx_e,
@@ -830,7 +912,7 @@ void Tomofsm2D::_get_grad_1shot(int nrec, int nx, int ny, int nx_s, int nx_e, ve
 		double ddx = xCen[b1] - xCen[b2];
 		double ddy = xTopo[b1] - xTopo[b2];
 		double trd = sqrt(ddx * ddx + ddy * ddy);
-		double cos = ddy / trd;
+		double cos = -ddy / trd;
 		double sin = ddx / trd;
 		if (cos * delta_tx + sin * delta_tz == 0)
 			lamda_tmp = 0;
