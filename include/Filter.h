@@ -37,6 +37,101 @@ inline void movingAverage2D(double** grad, int nx, int ny, int wx, int wy, int t
 		}
 	free_2d(grad_ex, nx1);
 }
+inline void movingAverage2D_vec(vector<vector<double>>&grad1, int nx, int ny, int wx, int wy, int times)
+{
+	//expand
+	double** grad;
+	grad = alloc_double_2d(nx, ny);
+	for (int i = 0; i < nx; ++i)
+	{
+		for (int j = 0; j < ny; ++j)
+		{
+			grad[i][j] = grad1[i][j];
+		}
+	}
+	double** grad_ex;
+	int bond = 30;
+	int nx1 = nx + 2 * bond;
+	int ny1 = ny + 2 * bond;
+	grad_ex = alloc_double_2d(nx1, ny1);
+	exmodel(grad, grad_ex, nx, ny, bond);
+	for (int it = 0; it < times; it++)
+	{
+		for (int i = 0; i < nx1; ++i)
+		{
+			for (int j = 0; j < ny1; ++j)
+			{
+				double sum = 0.0;
+				int count = 0;
+				for (int ii = max(0, i - wx / 2); ii <= min(nx1 - 1, i + wx / 2); ++ii)
+				{
+					for (int jj = max(0, j - wy / 2); jj <= min(ny1 - 1, j + wy / 2); ++jj)
+					{
+						sum += grad_ex[ii][jj];
+						count++;
+					}
+				}
+				grad_ex[i][j] = sum / count;
+			}
+		}
+	}
+	for (int ix = bond; ix < nx + bond; ix++)
+		for (int iy = bond; iy < ny + bond; iy++)
+		{
+			grad[ix - bond][iy - bond] = grad_ex[ix][iy];
+		}
+	free_2d(grad_ex, nx1);
+}
+inline void movingAverage1D(double* grad, int nx, int ny, int wx, int wy, int times)
+{
+	//expand
+	double** tmp;
+	tmp = alloc_double_2d(nx, ny);
+	for (int i = 0; i < nx; i++)
+		for (int j = 0; j < ny; j++)
+		{
+			tmp[i][j] = grad[j + i * ny];
+		}
+	//
+	double** grad_ex;
+	int bond = 30;
+	int nx1 = nx + 2 * bond;
+	int ny1 = ny + 2 * bond;
+	grad_ex = alloc_double_2d(nx1, ny1);
+	exmodel(tmp, grad_ex, nx, ny, bond);
+	for (int it = 0; it < times; it++)
+	{
+		for (int i = 0; i < nx1; ++i)
+		{
+			for (int j = 0; j < ny1; ++j)
+			{
+				double sum = 0.0;
+				int count = 0;
+				for (int ii = max(0, i - wx / 2); ii <= min(nx1 - 1, i + wx / 2); ++ii)
+				{
+					for (int jj = max(0, j - wy / 2); jj <= min(ny1 - 1, j + wy / 2); ++jj)
+					{
+						sum += grad_ex[ii][jj];
+						count++;
+					}
+				}
+				grad_ex[i][j] = sum / count;
+			}
+		}
+	}
+	for (int ix = bond; ix < nx + bond; ix++)
+		for (int iy = bond; iy < ny + bond; iy++)
+		{
+			tmp[ix - bond][iy - bond] = grad_ex[ix][iy];
+		}
+	for (int i = 0; i < nx; i++)
+		for (int j = 0; j < ny; j++)
+		{
+			grad[j + i * ny] = tmp[i][j];
+		}
+	free_2d(grad_ex, nx1);
+	free_2d(tmp, nx);
+}
 inline void Gauss2D(double** mod, int nx, int nz, int h_size, double sigma)
 {
 	int bond, ix, iz, i, j;
@@ -150,5 +245,71 @@ inline void smoothgauss2dtopo(double** v, int nz, int nx, double dz, double freq
 	delete[] beta2;
 	for (ix = 0; ix < nx; ix++)delete[] vf[ix];
 	delete[] vf;
+}
+
+inline void horizontal_smooth_fast(double** grad, int nx, int ny, int smx, const vector<int>& topo_ynum, double** output) {
+	int half = smx / 2;
+	for (int iy = 0; iy < ny; ++iy) {
+		// 前缀和数组
+		vector<double> sum_pre(nx + 1, 0.0);
+		vector<int> cnt_pre(nx + 1, 0);
+		for (int ix = 0; ix < nx; ++ix) {
+			double val = (iy >= topo_ynum[ix]) ? grad[ix][iy] : 0.0;
+			int cnt = (iy >= topo_ynum[ix]) ? 1 : 0;
+			sum_pre[ix + 1] = sum_pre[ix] + val;
+			cnt_pre[ix + 1] = cnt_pre[ix] + cnt;
+		}
+		// 对每个地下网格计算窗口均值
+		for (int ix = 0; ix < nx; ++ix) {
+			if (iy < topo_ynum[ix]) {
+				output[ix][iy] = 0.0;
+				continue;
+			}
+			int L = max(0, ix - half);
+			int R = min(nx - 1, ix + half);
+			double sum = sum_pre[R + 1] - sum_pre[L];
+			int cnt = cnt_pre[R + 1] - cnt_pre[L];
+			if (cnt > 0) output[ix][iy] = sum / cnt;
+			else output[ix][iy] = grad[ix][iy];
+		}
+	}
+}
+
+inline void vertical_smooth_fast(double** grad, int nx, int ny, int smy, const vector<int>& topo_ynum, double** output) {
+	int half = smy / 2;
+	for (int ix = 0; ix < nx; ++ix) {
+		// 前缀和数组
+		vector<double> sum_pre(ny + 1, 0.0);
+		vector<int> cnt_pre(ny + 1, 0);
+		for (int iy = 0; iy < ny; ++iy) {
+			double val = (iy >= topo_ynum[ix]) ? grad[ix][iy] : 0.0;
+			int cnt = (iy >= topo_ynum[ix]) ? 1 : 0;
+			sum_pre[iy + 1] = sum_pre[iy] + val;
+			cnt_pre[iy + 1] = cnt_pre[iy] + cnt;
+		}
+		for (int iy = 0; iy < ny; ++iy) {
+			if (iy < topo_ynum[ix]) {
+				output[ix][iy] = 0.0;
+				continue;
+			}
+			int L = max(0, iy - half);
+			int R = min(ny - 1, iy + half);
+			double sum = sum_pre[R + 1] - sum_pre[L];
+			int cnt = cnt_pre[R + 1] - cnt_pre[L];
+			if (cnt > 0) output[ix][iy] = sum / cnt;
+			else output[ix][iy] = grad[ix][iy];
+		}
+	}
+}
+
+inline void movingAverage2D_topo(double** grad, int nx, int ny, int smx, int smy, int smtimes, const vector<int>& topo_ynum) {
+	double** tmp = alloc_double_2d(nx, ny);
+	for (int iter = 0; iter < smtimes; ++iter) {
+		// 水平平滑
+		horizontal_smooth_fast(grad, nx, ny, smx, topo_ynum, tmp);
+		// 垂直平滑
+		vertical_smooth_fast(tmp, nx, ny, smy, topo_ynum, grad);
+	}
+	free_2d(tmp, nx);
 }
 #endif
