@@ -4,7 +4,7 @@ This is a seismic travel-time(reflection and refraction) modeling and inversion 
 Using block FSM tec., this tomography imaging program is much faster than the conventional raypath tomography.
 
 # Release note  
-v2.6.0 (Nov. 22, 2023): Inital version.
+v2.6.0 (Nov. 22, 2023): Inital version.  
 v3.0.0 (Nov. 22, 2023): Accelerated Computing, Optimize the code to better accommodate complex topographic relief..
 
 Reference:
