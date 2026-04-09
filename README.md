@@ -3,6 +3,10 @@ This is a seismic travel-time(reflection and refraction) modeling and inversion 
 
 Using block FSM tec., this tomography imaging program is much faster than the conventional raypath tomography.
 
+# Release note  
+v2.6.0 (Nov. 22, 2023): Inital version.
+v3.0.0 (Nov. 22, 2023): Accelerated Computing, Optimize the code to better accommodate complex topographic relief..
+
 Reference:
 
 1.Korenaga, J., Holbrook, W. S., Kent, G. M., Kelemen, P. B., Detrick, R. S., Larsen, H. C., ... & Dahl‐Jensen, T. (2000). Crustal structure of the southeast Greenland margin from joint refraction and reflection seismic tomography. Journal of Geophysical Research: Solid Earth, 105(B9), 21591-21614.
